@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Caliburn.Micro;
 using M3u8Downloader_H.Common.DownloadPrams;
 using M3u8Downloader_H.Services;
@@ -48,12 +49,32 @@ namespace M3u8Downloader_H.Models
                 return;
             }
 
-            // 单行模式：保持原有逻辑
-            string singleUrl = lines[0].Trim();
+            // 单行模式：尝试从文本中提取URL
+            string singleLine = lines[0].Trim();
+            string singleUrl;
+            string? extractedName = null;
+
+            // 检查是否包含URL混合文本（如 "名称,URL"）
+            var urlMatch = Regex.Match(singleLine, @"(https?://\S+)");
+            if (urlMatch.Success && urlMatch.Value != singleLine)
+            {
+                // 行中有URL和其他文本混合
+                singleUrl = urlMatch.Groups[1].Value;
+                extractedName = singleLine.Replace(urlMatch.Value, "").Trim(' ', ',', '\t', '，', '|', '-');
+                if (string.IsNullOrWhiteSpace(extractedName)) extractedName = null;
+            }
+            else
+            {
+                singleUrl = singleLine;
+            }
+
+            // 优先使用用户填写的名称，其次用提取的名称
+            string? finalName = !string.IsNullOrWhiteSpace(VideoName) ? VideoName : extractedName;
+
             Uri uri = new(singleUrl, UriKind.Absolute);
             if (!uri.IsFile)
             {
-                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
+                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), finalName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
                 NormalProcessDownloadAction(m3U8DownloadParams, null);
                 return;
             }
@@ -68,7 +89,7 @@ namespace M3u8Downloader_H.Models
             }
             else
             {
-                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
+                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), finalName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
                 NormalProcessDownloadAction(m3U8DownloadParams, null);
                 return;
             }

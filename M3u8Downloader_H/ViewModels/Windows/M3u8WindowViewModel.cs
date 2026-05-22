@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using Caliburn.Micro;
 using M3u8Downloader_H.Abstractions.Common;
 using M3u8Downloader_H.Extensions;
@@ -59,7 +60,8 @@ namespace M3u8Downloader_H.ViewModels.Windows
 
         /// <summary>
         /// 批量处理多行输入，每行一个下载任务
-        /// 格式: 地址----名称 (名称可选)
+        /// 自动从每行提取URL（http/https开头），剩余部分作为视频名称
+        /// 支持格式: "名称,URL" / "URL,名称" / "名称 URL" / 纯URL 等
         /// </summary>
         private void HandleBatchLines(string requestUrl, SettingsService settings)
         {
@@ -69,12 +71,18 @@ namespace M3u8Downloader_H.ViewModels.Windows
                 string trimmedLine = line.Trim();
                 if (string.IsNullOrWhiteSpace(trimmedLine)) continue;
 
-                string[] result = trimmedLine.Split(settings.Separator, 2);
                 try
                 {
+                    var (url, name) = ExtractUrlAndName(trimmedLine);
+                    if (url == null)
+                    {
+                        notifications.Enqueue($"未能从该行提取到有效地址: {trimmedLine}");
+                        continue;
+                    }
+
                     M3u8DownloadParams m3U8DownloadParams = new(
-                        new Uri(result[0].Trim(), UriKind.Absolute),
-                        result.Length > 1 ? result[1].Trim() : null,
+                        new Uri(url, UriKind.Absolute),
+                        string.IsNullOrWhiteSpace(name) ? null : name,
                         settings.SavePath,
                         settings.SelectedFormat,
                         settings.Headers,
@@ -86,7 +94,7 @@ namespace M3u8Downloader_H.ViewModels.Windows
                 }
                 catch (UriFormatException)
                 {
-                    notifications.Enqueue($"{result[0]} 不是正确的地址");
+                    notifications.Enqueue($"地址格式不正确: {trimmedLine}");
                     break;
                 }
                 catch (FileExistsException e)
@@ -95,6 +103,22 @@ namespace M3u8Downloader_H.ViewModels.Windows
                     break;
                 }
             }
+        }
+
+        /// <summary>
+        /// 从一行文本中提取URL和名称
+        /// 通过正则匹配 https?://... 提取URL，其余部分去除分隔符后作为名称
+        /// </summary>
+        private static (string? url, string? name) ExtractUrlAndName(string line)
+        {
+            var match = Regex.Match(line, @"(https?://\S+)");
+            if (!match.Success)
+                return (null, null);
+
+            string url = match.Groups[1].Value;
+            // 去掉URL部分，剩余的就是名称，同时去掉常见分隔符(逗号、空格、制表符等)
+            string name = line.Replace(match.Value, "").Trim(' ', ',', '\t', '，', '|', '-');
+            return (url, name);
         }
 
 

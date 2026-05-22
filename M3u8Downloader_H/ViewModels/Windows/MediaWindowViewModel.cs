@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using Caliburn.Micro;
 using M3u8Downloader_H.Models;
 using M3u8Downloader_H.Services;
@@ -50,7 +51,7 @@ namespace M3u8Downloader_H.ViewModels.Windows
 
         /// <summary>
         /// 批量处理多行输入，每行一个下载任务
-        /// 格式: 视频地址----名称 (名称可选)
+        /// 自动从每行提取URL（http/https开头），剩余部分作为视频名称
         /// </summary>
         private void HandleBatchLines(string videoUrl, SettingsService settings, int streamIndex)
         {
@@ -60,17 +61,20 @@ namespace M3u8Downloader_H.ViewModels.Windows
                 string trimmedLine = line.Trim();
                 if (string.IsNullOrWhiteSpace(trimmedLine)) continue;
 
-                string[] result = trimmedLine.Split(settings.Separator, 2);
                 try
                 {
-                    string url = result[0].Trim();
-                    string? name = result.Length > 1 ? result[1].Trim() : null;
+                    var (url, name) = ExtractUrlAndName(trimmedLine);
+                    if (url == null)
+                    {
+                        notifications.Enqueue($"未能从该行提取到有效地址: {trimmedLine}");
+                        continue;
+                    }
 
                     MediaDownloadParams mediaDownloadParams = new(
                         settings.SavePath,
                         new Uri(url),
                         null,
-                        name,
+                        string.IsNullOrWhiteSpace(name) ? null : name,
                         settings.Headers
                     )
                     {
@@ -80,7 +84,7 @@ namespace M3u8Downloader_H.ViewModels.Windows
                 }
                 catch (UriFormatException)
                 {
-                    notifications.Enqueue($"{result[0]} 不是正确的地址");
+                    notifications.Enqueue($"地址格式不正确: {trimmedLine}");
                     break;
                 }
                 catch (FileExistsException e)
@@ -89,6 +93,20 @@ namespace M3u8Downloader_H.ViewModels.Windows
                     break;
                 }
             }
+        }
+
+        /// <summary>
+        /// 从一行文本中提取URL和名称
+        /// </summary>
+        private static (string? url, string? name) ExtractUrlAndName(string line)
+        {
+            var match = Regex.Match(line, @"(https?://\S+)");
+            if (!match.Success)
+                return (null, null);
+
+            string url = match.Groups[1].Value;
+            string name = line.Replace(match.Value, "").Trim(' ', ',', '\t', '，', '|', '-');
+            return (url, name);
         }
 
         public void ProcessMediaDownload(IMediaDownloadParam mediaDownloadParams)
