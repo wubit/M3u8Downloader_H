@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Caliburn.Micro;
 using M3u8Downloader_H.Abstractions.Common;
 using M3u8Downloader_H.Extensions;
@@ -28,6 +28,7 @@ namespace M3u8Downloader_H.ViewModels.Windows
         {
             VideoDownloadInfo.HandleTextAction = HandleTxt;
             VideoDownloadInfo.NormalProcessDownloadAction = ProcessM3u8Download;
+            VideoDownloadInfo.BatchProcessAction = HandleBatchLines;
             this.settingsService = settingsService;
             this.pluginService = pluginService;
             notifications = Notifications;
@@ -53,6 +54,46 @@ namespace M3u8Downloader_H.ViewModels.Windows
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// 批量处理多行输入，每行一个下载任务
+        /// 格式: 地址----名称 (名称可选)
+        /// </summary>
+        private void HandleBatchLines(string requestUrl, SettingsService settings)
+        {
+            string[] lines = requestUrl.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                string trimmedLine = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedLine)) continue;
+
+                string[] result = trimmedLine.Split(settings.Separator, 2);
+                try
+                {
+                    M3u8DownloadParams m3U8DownloadParams = new(
+                        new Uri(result[0].Trim(), UriKind.Absolute),
+                        result.Length > 1 ? result[1].Trim() : null,
+                        settings.SavePath,
+                        settings.SelectedFormat,
+                        settings.Headers,
+                        VideoDownloadInfo.Method,
+                        VideoDownloadInfo.Key,
+                        VideoDownloadInfo.Iv
+                    );
+                    ProcessM3u8Download(m3U8DownloadParams);
+                }
+                catch (UriFormatException)
+                {
+                    notifications.Enqueue($"{result[0]} 不是正确的地址");
+                    break;
+                }
+                catch (FileExistsException e)
+                {
+                    notifications.Enqueue(e);
+                    break;
+                }
             }
         }
 

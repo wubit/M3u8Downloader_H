@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using Caliburn.Micro;
@@ -21,6 +21,7 @@ namespace M3u8Downloader_H.Models
 
         public Action<Uri> HandleTextAction { get; set; } = default!;
         public Action<M3u8DownloadParams, string?> NormalProcessDownloadAction { get; set; } = default!;
+        public Action<string, SettingsService> BatchProcessAction { get; set; } = default!;
 
 
         public void Reset(bool resetUrl,bool resetName)
@@ -38,16 +39,27 @@ namespace M3u8Downloader_H.Models
             if(string.IsNullOrWhiteSpace(RequestUrl))
                 throw new InvalidOperationException("下载地址不能为空");
 
-            Uri uri = new(RequestUrl!, UriKind.Absolute);
+            // 检查是否包含多行（批量模式）
+            string[] lines = RequestUrl.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length > 1)
+            {
+                // 多行批量模式：每行一个任务
+                BatchProcessAction(RequestUrl, settingsService);
+                return;
+            }
+
+            // 单行模式：保持原有逻辑
+            string singleUrl = lines[0].Trim();
+            Uri uri = new(singleUrl, UriKind.Absolute);
             if (!uri.IsFile)
             {
-                M3u8DownloadParams m3U8DownloadParams = new(new Uri(RequestUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
+                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
                 NormalProcessDownloadAction(m3U8DownloadParams, null);
                 return;
             }
 
 
-            string ext = Path.GetExtension(RequestUrl).Trim('.');
+            string ext = Path.GetExtension(singleUrl).Trim('.');
             string extension = extensionArr.Where(e => e == ext).FirstOrDefault() ?? throw new InvalidOperationException("请确认是否为.m3u8或.txt或.json");
             if (extension == "txt")
             {
@@ -56,7 +68,7 @@ namespace M3u8Downloader_H.Models
             }
             else
             {
-                M3u8DownloadParams m3U8DownloadParams = new(new Uri(RequestUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
+                M3u8DownloadParams m3U8DownloadParams = new(new Uri(singleUrl), VideoName, settingsService.SavePath, settingsService.SelectedFormat, settingsService.Headers, Method, Key, Iv);
                 NormalProcessDownloadAction(m3U8DownloadParams, null);
                 return;
             }
